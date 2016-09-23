@@ -1,3 +1,4 @@
+##Funçã para calcular o passo "d" e o tamanho alpha
 function metodo_newton_PC(B, L_xλ, cx, λ, y;tol = 1e-6, tau = 0.5)
     (m,n) = size(A)
     d = B\[L_xλ;cx;-diagm(λ)*diagm(y)*ones(m)]
@@ -33,7 +34,7 @@ function metodo_newton_PC(B, L_xλ, cx, λ, y;tol = 1e-6, tau = 0.5)
     return d, α
 end
 
-
+##Funçã principal
 function pre_corr_QP(f, x0, A, b; tol = 1e-6, max_iter = 1000, max_time = 60)
     exit_flag = 0
     ∇f(x) = ForwardDiff.gradient(f, x)
