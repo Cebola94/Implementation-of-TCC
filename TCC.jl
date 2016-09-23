@@ -1,4 +1,4 @@
-##Funçã para calcular o passo "d" e o tamanho alpha
+##Função para calcular o passo "d" e o tamanho "alpha"
 function metodo_newton_PC(B, L_xλ, cx, λ, y;tol = 1e-6, tau = 0.5)
     (m,n) = size(A)
     d = B\[L_xλ;cx;-diagm(λ)*diagm(y)*ones(m)]
