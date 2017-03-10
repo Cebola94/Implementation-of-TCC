@@ -1,92 +1,106 @@
-##Função para calcular o passo "d" e o tamanho "alpha"
-function metodo_newton_PC(B, L_xλ, cx, λ, y;tol = 1e-6, tau = 0.5)
+function interior_point_method(A, b, c; tol = 1e-5,max_time = 60, max_iter = 50, verbose = true)
     (m,n) = size(A)
-    d = B\[L_xλ;cx;-diagm(λ)*diagm(y)*ones(m)]
-    dx = d[1:n]
-    dy = d[n+1:n+m]
-    dλ = d[n+m+1:n+2*m]
-    μ = dot(y,λ)/m
-    α = 1.0
-    for i = 1:m
-        while y[i] +α*dy[i] <= 0 || λ[i] +α*dλ[i] <= 0
-            α = α*0.9
+    e = ones(n)
+    τ = 0.9
+    iter = 0
+    ef = 0
+    el_time = 0.0
+    st_time = time()
+    x, s, λ = start_point(A, b, c, tol, iter, el_time)
+    μ = dot(x,s)/n
+    L_xλ = A' * λ + s - c
+    cx = A * x - b
+    S = diagm(s);X = diagm(x)
+    if verbose
+        @printf("%4s  %9s  %9s  %9s  %9s\n", "iter", "||c(x)||", "||L_xλ||", "λ", "μ")
+    end
+    while norm(L_xλ) > tol || norm(cx) > tol
+        cx_ant = cx
+        S = diagm(s);X = diagm(x); M = [-L_xλ;-cx;-X * S * e]
+        B = [zeros(n,n) A' eye(n); A zeros(m,m) zeros(m,n);S zeros(n,m) X]
+        d = B\M
+        dx = d[1:n]
+        dλ = d[n+1:n+m]
+        ds = d[n+m+1:m+2*n]
+        I = find(dx.<0)
+        J = find(ds.<0)
+        if length(I) == 0
+            α1 = 0.5
+        else
+            α1 = min(1,minimum(-x[I] ./ dx[I]))
+        end
+        if length(J) == 0
+            α2 = 0.5
+        else
+            α2 = min(1,minimum(-s[J] ./ ds[J]))
+        end
+        μ_aff = dot(x + α1 * dx,s + α2 * ds)/n
+        σ = (μ_aff/μ)^3
+        M = [-L_xλ;-cx;-X * S * e - diagm(dx) * diagm(ds) * e + (σ * μ) * e]
+        d = B\M
+        dx = d[1:n]
+        dλ = d[n+1:n+m]
+        ds = d[n+m+1:m+2*n]
+        I = find(dx.<0)
+        J = find(ds.<0)
+        if length(I) == 0
+            α1 = 0.5
+        else
+            α1 = minimum(-x[I] ./ dx[I])
+        end
+        if length(J) == 0
+            α2 = 0.5
+        else
+            α2 = minimum(-s[J] ./ ds[J])
+        end
+        α1 = min(1,τ*α1)
+        α2 = min(1,τ*α2)
+        x += α1 * dx
+        s += α2 * ds
+        λ += α2 * dλ
+        μ = dot(x,s)/n
+        L_xλ = A' * λ + s - c
+        cx = A * x - b
+        if norm(cx) <= norm(cx_ant)
+            τ = min(1,1.001*τ)
+        end
+        iter = iter + 1
+        verbose && @printf("%4d  %9.1e  %9.1e  %8.1e  %9.1e\n", iter, norm(cx), norm(L_xλ), norm(λ), μ)
+        if iter >= max_iter
+            ef = 1
+            break
+        end
+        el_time = time() - st_time
+        if el_time >= max_time
+            ef = 2
+            break
         end
     end
-    μ_aff = dot(y + α*dy,λ + α*dλ)/m
-    σ = (μ_aff/μ)^3
-    d = B\[L_xλ;cx;-diagm(λ)*diagm(y)*ones(m)-diagm(dλ)*diagm(dy)*ones(m)+(σ*μ)*ones(m)]
-    dx = d[1:n]
-    dy = d[n+1:n+m]
-    dλ = d[n+m+1:n+2*m]
-    I = find(dy.<0)
-    J = find(dλ.<0)
-    if length(I) == 0
-        α1 = 0.5
-    else
-        α1 = minimum(-y[I]./dy[I])
-    end
-    if length(J) == 0
-        α2 = 0.5
-    else
-        α2 = minimum(-λ[J]./dλ[J])
-    end
-    α = tau*min(α1,α2)
-    return d, α
+
+    return x, λ, norm(cx), norm(L_xλ), iter, ef, el_time
 end
 
-##Funçã principal
-function pre_corr_QP(f, x0, A, b; tol = 1e-6, max_iter = 1000, max_time = 60)
-    exit_flag = 0
-    ∇f(x) = ForwardDiff.gradient(f, x)
-    H(x) = ForwardDiff.hessian(f, x)
+function start_point(A, b, c, tol, iter, eltime)
     (m,n) = size(A)
-
-    x = copy(x0) # Cópia de x0
-    y = A*x - b
-    for i = 1:m
-        if y[i] <= 0
-            y[i] = 1
-        end
+    e = ones(n)
+    AA_t = inv(A * A')
+    x = A' * AA_t * b
+    x = vec(x)
+    λ = AA_t * A * c
+    s = c - A' * λ
+    δ_x = max((-3/2) * minimum(x),0)
+    δ_s = max((-3/2) * minimum(s),0)
+    x = x + δ_x * e
+    s = s + δ_s * e
+    μ = dot(x,s)/n
+    L_xλ = A' * λ + s - c
+    cx = A * x - b
+    if norm(cx) < tol && norm(L_xλ) < tol
+       return x, s, λ
     end
-    iter = 0
-    start_time = time()
-    elapsed_time = 0.0
-    fx = f(x)
-    ∇fx = ∇f(x)
-    G = H(x)
-    λ = ones(m)
-    L_xλ = ∇fx - A'*λ
-    while norm(L_xλ) > tol && norm(A*x-b, 1) > tol
-        cx = A*x - y - b
-        B = [G zeros(n,m) -A'; A -eye(m) zeros(m,m);zeros(m,n) diagm(λ) diagm(y)]
-        d, α = metodo_newton_PC(B ,-L_xλ ,-cx ,λ ,y)
-        x += α*d[1:n]
-        y += α*d[n+1:n+m]
-        for i = 1:m
-            if y[i] <= 0
-                y[i] = 1
-            end
-        end
-        λ += α*d[n+m+1:n+2*m]
-        for i = 1:m
-            if λ[i] <= 0
-                λ[i] = 1
-            end
-        end
-        fx = f(x)
-        ∇fx = ∇f(x)
-        G = H(x)
-        L_xλ = ∇fx - A'*λ
-        iter = iter + 1
-        if iter >= max_iter
-            exit_flag = 1
-            break
-        end
-        elapsed_time = time() - start_time
-        if elapsed_time >= max_time
-            exit_flag = 2
-            break
-        end
-    end
-    return x, fx, ∇fx, exit_flag, iter, elapsed_time
+    δ_x = 0.5 * dot(x,s)/dot(e,s)
+    δ_s = 0.5 * dot(x,s)/dot(e,x)
+    x = x + δ_x * e
+    s = s + δ_s * e
+    return x, s, λ
 end
