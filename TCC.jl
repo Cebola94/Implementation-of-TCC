@@ -6,22 +6,31 @@ function interior_point_method(A, b, c; tol = 1e-5,max_time = 60, max_iter = 50,
     ef = 0
     el_time = 0.0
     st_time = time()
-    x, s, λ = start_point(A, b, c, tol, iter, el_time)
+    x = e; s = e; λ = ones(m)
+    #x, s, λ = start_point(A, b, c, tol, iter, el_time)
     μ = dot(x,s)/n
     L_xλ = A' * λ + s - c
     cx = A * x - b
     S = diagm(s);X = diagm(x)
     if verbose
-        @printf("%4s  %9s  %9s  %9s  %9s\n", "iter", "||c(x)||", "||L_xλ||", "λ", "μ")
+        @printf("%4s  %9s  %9s  %13s  %4s  %8s\n", "iter", "||c(x)||", "||L_xλ||", "||c'x - b'λ||", "λ", "μ")
     end
-    while norm(L_xλ) > tol || norm(cx) > tol
+
+    while norm(L_xλ) > tol || norm(cx) > tol || norm(c'*x - b'*λ) > tol
         cx_ant = cx
         S = diagm(s);X = diagm(x); M = [-L_xλ;-cx;-X * S * e]
         B = [zeros(n,n) A' eye(n); A zeros(m,m) zeros(m,n);S zeros(n,m) X]
         d = B\M
+        #d,stats = cg(B,M)
         dx = d[1:n]
         dλ = d[n+1:n+m]
         ds = d[n+m+1:m+2*n]
+        M = [zeros(n);zeros(m);-X * S * e]
+        d = B\M
+        #d,stats = cg(B,M)
+        dx += d[1:n]
+        dλ += d[n+1:n+m]
+        ds += d[n+m+1:m+2*n]
         I = find(dx.<0)
         J = find(ds.<0)
         if length(I) == 0
@@ -38,6 +47,7 @@ function interior_point_method(A, b, c; tol = 1e-5,max_time = 60, max_iter = 50,
         σ = (μ_aff/μ)^3
         M = [-L_xλ;-cx;-X * S * e - diagm(dx) * diagm(ds) * e + (σ * μ) * e]
         d = B\M
+        #d,stats = cg(B,M)
         dx = d[1:n]
         dλ = d[n+1:n+m]
         ds = d[n+m+1:m+2*n]
@@ -65,7 +75,7 @@ function interior_point_method(A, b, c; tol = 1e-5,max_time = 60, max_iter = 50,
             τ = min(1,1.001*τ)
         end
         iter = iter + 1
-        verbose && @printf("%4d  %9.1e  %9.1e  %8.1e  %9.1e\n", iter, norm(cx), norm(L_xλ), norm(λ), μ)
+        verbose && @printf("%2d  %9.1e  %9.1e  %12.1e  %9.1e  %9.1e\n", iter, norm(cx), norm(L_xλ), norm(c'*x - b'*λ), norm(λ), μ)
         if iter >= max_iter
             ef = 1
             break
